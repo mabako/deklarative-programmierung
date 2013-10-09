@@ -40,23 +40,37 @@
 (define D :D)
 
 ; Erweiterte Züge - 180°. Offiziell zählen diese als 1 Zug.
-(define L2 (list L L))
-(define R2 (list R R))
-(define F2 (list F F))
-(define B2 (list B B))
-(define U2 (list U U))
-(define D2 (list D D))
+(define L2 :L2)
+(define R2 :R2)
+(define F2 :F2)
+(define B2 :B2)
+(define U2 :U2)
+(define D2 :D2)
 
-; Erweiterte Züge - -90°. Der Einfachheit halber als 3 mal ausführen realisiert,
-; da dies identisch mit -1 mal ist.
-(define L- (list L L L))
-(define R- (list R R R))
-(define F- (list F F F))
-(define B- (list B B B))
-(define U- (list U U U))
-(define D- (list D D D))
+; Erweiterte Züge - -90°.
+(define L- :L-)
+(define R- :R-)
+(define F- :F-)
+(define B- :B-)
+(define U- :U-)
+(define D- :D-)
 
 (define symbole (list F F2 F- B B2 B- U U2 U- D D2 D- L L2 L- R R2 R-))
+
+
+
+(define gruppe
+  ; Vereinfachung der Drehung: Dieselbe Option darf auch in anderen Varianten nicht
+  ; mehrfach hintereinander ausgeführt werden, da wir sonst Duplikate enthalten
+  (list
+    (list F F2 F-)
+    (list B B2 B-)
+    (list L L2 L-)
+    (list R R2 R-)
+    (list U U2 U-)
+    (list D D2 D-)
+  )
+)
 
 ; ---
 
@@ -165,7 +179,7 @@
   )
 )
 
-(define (func seite nachher . rest)
+(define (_w seite nachher . rest)
   ; Baut eine Funktion für Zugriff auf den Würfel (struct) auf und ruft diese mit Parametern auf.
   (apply
     (eval
@@ -175,7 +189,15 @@
   )
 )
 
-(define (rotiere w seite)
+(define (get-w w seite)
+  (_w seite "" w)
+)
+
+(define (set-w w seite wert)
+  (_w seite "-set!" w wert)
+)
+
+(define (rotiere+ w seite)
   ; Dreht eine Fläche des Würfels im Uhrzeigersinn.
   ; Würfelseiten sind Listen:
   ;   0 1 2
@@ -187,11 +209,11 @@
   ;   8 5 2
   (let
     (
-      (liste (func seite "" w))
+      (liste (get-w w seite))
     )
 
     ; Direkt setzen
-    (func seite "-set!" w
+    (set-w w seite
       (list
         (get-n liste 6)
         (get-n liste 3)
@@ -207,91 +229,183 @@
   )
 )
 
+(define (rotiere- w seite)
+  ; Neu:
+  ;   2 5 8
+  ;   1 4 7
+  ;   0 3 6
+
+  ; das hier ist eigtl.
+  ; (rotiere* w seite)
+  ; (rotiere+ w seite)
+  (let
+    (
+      (liste (get-w w seite))
+    )
+
+    ; Direkt setzen
+    (set-w w seite
+      (list
+        (get-n liste 2)
+        (get-n liste 5)
+        (get-n liste 8)
+        (get-n liste 1)
+        (get-n liste 4)
+        (get-n liste 7)
+        (get-n liste 0)
+        (get-n liste 3)
+        (get-n liste 6)
+      )
+    )
+  )
+)
+
+(define (rotiere-helper A teile-A B teile-B)
+  ; Dreht alle Elemente an Position (a1, a2, a3) der Liste A auf neue Elemente
+  ; an Position (b1, b2, b3) in Liste B. Der Rest der Liste B bleibt erhalten.
+  (set-n
+    (set-n
+      (set-n
+        B
+        (car teile-B)
+        (get-n A (car teile-A))
+      )
+      (cadr teile-B)
+      (get-n A (cadr teile-A))
+    )
+    (caddr teile-B)
+    (get-n A (caddr teile-A))
+  )
+)
+
 (define (rotiere-vier w seite-a teile-a seite-b teile-b seite-c teile-c seite-d teile-d)
   ; Rotiert die vier gegebenen Listen im Uhrzeigersinn.
-  (letrec*
+  (let
     (
-      (get
-        (lambda (seite)
-          ; Gibt den Inhalt einer Würfelseite zurück.
-          (func seite "" w)
-        )
-      )
-      (set
-        (lambda (seite wert)
-          ; Setzt den Inhalt einer Würfelseite.
-          (func seite "-set!" w wert)
-        )
-      )
-      (rot
-        (lambda (A teile-A B teile-B)
-          ; Dreht alle Elemente an Position (a1, a2, a3) der Liste A auf neue Elemente
-          ; an Position (b1, b2, b3) in Liste B. Der Rest der Liste B bleibt erhalten.
-          (set-n
-            (set-n
-              (set-n
-                B
-                (car teile-B)
-                (get-n A (car teile-A))
-              )
-              (cadr teile-B)
-              (get-n A (cadr teile-A))
-            )
-            (caddr teile-B)
-            (get-n A (caddr teile-A))
-          )
-        )
-      )
-
       ; Convenience: spart das zweimalige Ausführen/Schreiben
-      (a (get seite-a))
-      (b (get seite-b))
-      (c (get seite-c))
-      (d (get seite-d))
+      (a (get-w w seite-a))
+      (b (get-w w seite-b))
+      (c (get-w w seite-c))
+      (d (get-w w seite-d))
     )
 
     ; Für jede anliegende Seite ausführen
-    (set seite-b (rot a teile-a b teile-b))
-    (set seite-c (rot b teile-b c teile-c))
-    (set seite-d (rot c teile-c d teile-d))
-    (set seite-a (rot d teile-d a teile-a))
+    (set-w w seite-b (rotiere-helper a teile-a b teile-b))
+    (set-w w seite-c (rotiere-helper b teile-b c teile-c))
+    (set-w w seite-d (rotiere-helper c teile-c d teile-d))
+    (set-w w seite-a (rotiere-helper d teile-d a teile-a))
+  )
+)
+
+(define (rotiere* w seite)
+  ; Hinterher:
+  ;   8 7 6
+  ;   5 4 3
+  ;   2 1 0
+  (set-w w seite (reverse (get-w w seite)))
+)
+
+(define (rotiere-zwei w . e)
+  (letrec*
+    (
+      (seite-a (car e))
+      (seite-b (caddr e))
+      (a (get-w w seite-a))
+      (b (get-w w seite-b))
+      (teile-a (cadr e))
+      (teile-b (cadddr e))
+    )
+    (set-w w seite-b (rotiere-helper a teile-a b teile-b))
+    (set-w w seite-a (rotiere-helper b teile-b a teile-a))
+  )
+)
+
+(define (zugset seite)
+  ; Das Zugset ist für normal drehen definiert. Anpassungen für 180° bzw. -90° sind
+  ; notwendig.
+  (case seite
+    ;               0    1        2      3        4     5        6     7
+    ((front) (list 'top '(6 7 8) 'right '(0 3 6) 'down '(2 1 0) 'left '(8 5 2)))
+    ((back)  (list 'top '(0 1 2) 'left '(6 3 0) 'down '(8 7 6) 'right '(2 5 8)))
+    ((left)  (list 'top '(0 3 6) 'front '(0 3 6) 'down '(0 3 6) 'back '(8 5 2)))
+    ((right) (list 'top '(2 5 8) 'back '(6 3 0) 'down '(2 5 8) 'front '(2 5 8)))
+    ((top)   (list 'left '(0 1 2) 'back '(0 1 2) 'right '(0 1 2) 'front '(0 1 2)))
+    ((down)  (list 'left '(6 7 8) 'front '(6 7 8) 'right '(6 7 8) 'back '(6 7 8)))
   )
 )
 
 (define (zug! w aktion)
   ; Einen einzelnen Zug durchführen.
-  ;(print aktion)
+  ; (print aktion)
   (letrec
     (
+      (kurz
+        (lambda (seite t)
+          (let
+            (
+              (set (zugset seite))
+            )
+            (case t
+              ((0)
+                (rotiere+ w seite)
+                (apply rotiere-vier (cons w set))
+              )
+              ((1)
+                (rotiere* w seite)
+                (apply rotiere-zwei
+                  (list w (get-n set 0) (get-n set 1)
+                          (get-n set 4) (get-n set 5)
+                  )
+                )
+                (apply rotiere-zwei
+                  (list w (get-n set 6) (get-n set 7)
+                          (get-n set 2) (get-n set 3)
+                  )
+                )
+              )
+              ((2)
+                (rotiere- w seite)
+                (apply rotiere-vier
+                  (list w (get-n set 0) (get-n set 1)
+                          (get-n set 6) (get-n set 7)
+                          (get-n set 4) (get-n set 5)
+                          (get-n set 2) (get-n set 3)
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
       (einzeln
         (lambda (a)
           ; Simple Unterscheidung je nach Zugart bestimmte Seiten drehen. Referenz für die Zahlen
           ; ist die Anmerkung in 'rotiere'.
           (case a
-            ((:F)
-              (rotiere w 'front)
-              (rotiere-vier w 'top '(6 7 8) 'right '(0 3 6) 'down '(2 1 0) 'left '(8 5 2))
-            )
-            ((:B)
-              (rotiere w 'back)
-              (rotiere-vier w 'top '(0 1 2) 'left '(6 3 0) 'down '(8 7 6) 'right '(2 5 8))
-            )
-            ((:L)
-              (rotiere w 'left)
-              (rotiere-vier w 'top '(0 3 6) 'front '(0 3 6) 'down '(0 3 6) 'back '(8 5 2))
-            )
-            ((:R)
-              (rotiere w 'right)
-              (rotiere-vier w 'top '(2 5 8) 'back '(6 3 0) 'down '(2 5 8) 'front '(2 5 8))
-            )
-            ((:U)
-              (rotiere w 'top)
-              (rotiere-vier w 'left '(0 1 2) 'back '(0 1 2) 'right '(0 1 2) 'front '(0 1 2))
-            )
-            ((:D)
-              (rotiere w 'down)
-              (rotiere-vier w 'left '(6 7 8) 'front '(6 7 8) 'right '(6 7 8) 'back '(6 7 8))
-            )
+            ((:F) (kurz 'front 0))
+            ((:F2) (kurz 'front 1))
+            ((:F-) (kurz 'front 2))
+
+            ((:B) (kurz 'back 0))
+            ((:B2) (kurz 'back 1))
+            ((:B-) (kurz 'back 2))
+
+            ((:L) (kurz 'left 0))
+            ((:L2) (kurz 'left 1))
+            ((:L-) (kurz 'left 2))
+
+            ((:R) (kurz 'right 0))
+            ((:R2) (kurz 'right 1))
+            ((:R-) (kurz 'right 2))
+
+            ((:U) (kurz 'top 0))
+            ((:U2) (kurz 'top 1))
+            ((:U-) (kurz 'top 2))
+
+            ((:D) (kurz 'down 0))
+            ((:D2) (kurz 'down 1))
+            ((:D-) (kurz 'down 2))
+
             (else (error "einzelner Zug" "zug!/einzeln" a))
           )
           ; (ausgabe w)
@@ -300,15 +414,7 @@
       (aufruf
         (lambda (a)
           ; Solange ziehen, bis nichtsmehr zum Ziehen existiert.
-          (if (list? a)
-            (if (null? a) '()
-              (begin
-                (einzeln (car a))
-                (aufruf (cdr a))
-              )
-            )
-
-            ; ist keine Liste, das Symbol(?) weitergeben.
+          (if (null? a) '()
             (einzeln a)
           )
         )
@@ -341,27 +447,7 @@
         (lambda (f)
           (if (null? f)
             ""
-            (let
-              (
-                (c (car f))
-              )
-              (string-append
-                ; eventuell eine Liste bei mehrfach ausgeführten Befehlen
-                (if (list? c)
-                  (let
-                    (
-                      (d (keyword->string (car c)))
-                    )
-                    (case (length c)
-                      ((2) (string-append d "2")) ; Länge2 ist immer 2x ausführen, d.h. 180°
-                      ((3) (string-append d "-")) ; Länge3 ist immer 3x ausführen, d.h. -90°
-                    )
-                  )
-                  (keyword->string c)
-                )
-                (anhaengen (cdr f))
-              )
-            )
+            (string-append (keyword->string (car f)) (anhaengen (cdr f)))
           )
         )
       )
@@ -387,6 +473,27 @@
 (define (mischen! anzahl)
   (apply wuerfel! (mischen anzahl))
 )
+
+
+; Superflip!
+; (ausgabe (wuerfel! R L U2 F U- D F2 R2 B2 L U2 F- B- U R2 D F2 U R2 U))
+
+; cube20.org, nur nach 20 Zügen lösbarer Würfel
+; (ausgabe (wuerfel! F U- F2 D- B U R- F- L D- R- U- L U B- D2 R- F U2 D2))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ; ---
 ; Lösungsvorschläge
@@ -418,7 +525,7 @@
         (lambda (seiten)
           (if (null? seiten)
             0
-            (+ (char (func (car seiten) "" w)) (* 54 (h (cdr seiten))))
+            (+ (char (get-w w (car seiten))) (* 54 (h (cdr seiten))))
           )
         )
       )
@@ -467,6 +574,8 @@
   )
 )
 
+(print (hashtable-size *cache))
+
 (define (gelöst? w)
   (hashtable-contains? *cache (hash w))
 )
@@ -474,20 +583,28 @@
 ; Lösungsalgorithmen
 
 ; Trivialer Lösungsalgorithmus, der innerhalb einer maximalen Tiefe nach möglichen Lösungen sucht.
-(define (tiefensuche w max bisher)
+(define (tiefensuche w max bisher außer)
   (cond ((< max 0) '())
         ((gelöst? w) (reverse bisher))
         (else 
           (letrec
             (
               (s symbole)
+              (ohne
+                (lambda (l x)
+                  (if (memq x (car l))
+                    (car l)
+                    (ohne (cdr l) x)
+                  )
+                )
+              )
               (rekursiv
                 (lambda (w s)
-                  (if (null? s)
+                  (if (or (memq s außer) (null? s))
                     '()
                     (letrec*
                       (
-                        (ret (tiefensuche (zug! (copy w) (car s)) (- max 1) (cons (car s) bisher)))
+                        (ret (tiefensuche (zug! (copy w) (car s)) (- max 1) (cons (car s) bisher) (ohne gruppe (car s))))
                       )
                       (if (null? ret)
                         (rekursiv w (cdr s))
@@ -504,23 +621,17 @@
   )
 )
 
-; Superflip!
-;(ausgabe (wuerfel! R L U2 F U- D F2 R2 B2 L U2 F- B- U R2 D F2 U R2 U))
-
-; cube20.org, nur nach 20 Zügen lösbarer Würfel
-;(ausgabe (wuerfel! F U- F2 D- B U R- F- L D- R- U- L U B- D2 R- F U2 D2))
-
 (print (gelöst? (make-wuerfel)))
 
 (let
   (
-    (t (wuerfel! D2 L R U- R))
+    (t (wuerfel! D2 L R U- R D U))
   )
   (ausgabe t)
   (print (gelöst? t))
   (let
     (
-      (ts (tiefensuche t 2 '()))
+      (ts (tiefensuche t 4 '() '()))
     )
     (if (list? ts)
       (folge-ausgeben ts)
