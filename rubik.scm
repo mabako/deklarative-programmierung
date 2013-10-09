@@ -11,6 +11,22 @@
   (right '(Y Y Y Y Y Y Y Y Y))
 )
 
+; Kopieren
+(define (copy w)
+  (let
+    (
+      (x (make-wuerfel))
+    )
+    (wuerfel-left-set! x (wuerfel-left w))
+    (wuerfel-top-set! x (wuerfel-top w))
+    (wuerfel-back-set! x (wuerfel-back w))
+    (wuerfel-down-set! x (wuerfel-down w))
+    (wuerfel-front-set! x (wuerfel-front w))
+    (wuerfel-right-set! x (wuerfel-right w))
+    x
+  )
+)
+
 ; Eingeschränktes Zugset, Notation von
 ;   http://de.wikibooks.org/wiki/Zauberw%C3%BCrfel/_3x3x3/_Notation
 ; Nur äußere Layer, keine inneren/doppelten Layer.
@@ -40,15 +56,14 @@
 (define U- (list U U U))
 (define D- (list D D D))
 
+(define symbole (list F F2 F- B B2 B- U U2 U- D D2 D- L L2 L- R R2 R-))
+
 ; ---
 
-(define (get-n liste n)
-  "Gibt das (n)-te Element der (liste) zurück."
-  (if (= n 0) (car liste) (get-n (cdr liste) (- n 1)))
-)
+(define get-n list-ref)
 
 (define (set-n liste n wert)
-  "Setzt das (n)-te Element der (liste) auf (wert)."
+  ; Setzt das (n)-te Element der (liste) auf (wert).
   (if (= n 0)
     (cons wert (cdr liste))
     (cons (car liste) (set-n (cdr liste) (- n 1) wert))
@@ -56,10 +71,10 @@
 )
 
 (define (ausgabe w)
-  "Ausgabe des Würfels in Farbe als 'Draufsicht'."
-  "  erste Zeile - oben (eingerückt, oberhalb von 'vorn')"
-  "  zweite Zeile - links, vorn, rechts, hinten"
-  "  dritte Zeile - unten (eingerückt)"
+  ;Ausgabe des Würfels in Farbe als 'Draufsicht'.
+  ;  erste Zeile - oben (eingerückt, oberhalb von 'vorn')
+  ;  zweite Zeile - links, vorn, rechts, hinten
+  ;  dritte Zeile - unten (eingerückt)
   (letrec
     (
       (blocks
@@ -74,7 +89,7 @@
 
       (hintergrund
         (lambda (farbe)
-          "Hilfsfunktion, damit der Hintergrund auch weiß bleibt, wenn 0 (leer) kommt."
+          ; Hilfsfunktion, damit der Hintergrund auch weiß bleibt, wenn 0 (leer) kommt.
           (if (= farbe 49)
             37
             (- farbe 10)
@@ -83,7 +98,7 @@
       )
       (farbig
         (lambda (farbe)
-          "Gibt einen String zurück, der ein 'X' mit Steuerzeichen für die Linux-Konsole enthält."
+          ; Gibt einen String zurück, der ein 'X' mit Steuerzeichen für die Linux-Konsole enthält.
           (string-append
             "\033["
             (number->string farbe)
@@ -95,7 +110,7 @@
       )
       (zeichen
         (lambda (z)
-          "Gibt ein einzelnes Zeichen farbig aus. Konsolenfarben sollten idealerweise passen."
+          ; Gibt ein einzelnes Zeichen farbig aus. Konsolenfarben sollten idealerweise passen.
           (display*
             (farbig
               (case z
@@ -113,8 +128,8 @@
       )
       (zeile
         (lambda (z num)
-          "Gibt drei Zeichen der aktuellen Liste aus. (num) ist dabei der Index des ersten Zeichens"
-          "Damit wird der Würfel zeilenweise ausgegeben."
+          ; Gibt drei Zeichen der aktuellen Liste aus. (num) ist dabei der Index des ersten Zeichens
+          ; Damit wird der Würfel zeilenweise ausgegeben.
           (if (null? z) (display "\n")
             (begin
               (let ((x (car z)))
@@ -151,7 +166,7 @@
 )
 
 (define (func seite nachher . rest)
-  "Baut eine Funktion für Zugriff auf den Würfel (struct) auf und ruft diese mit Parametern auf."
+  ; Baut eine Funktion für Zugriff auf den Würfel (struct) auf und ruft diese mit Parametern auf.
   (apply
     (eval
       (string->symbol (string-append "wuerfel-" (symbol->string seite) nachher))
@@ -161,7 +176,7 @@
 )
 
 (define (rotiere w seite)
-  "Dreht eine Fläche des Würfels im Uhrzeigersinn."
+  ; Dreht eine Fläche des Würfels im Uhrzeigersinn.
   ; Würfelseiten sind Listen:
   ;   0 1 2
   ;   3 4 5 ; 4 bleibt immer gleich, da es keine Operationen für Kernstücke gibt.
@@ -193,25 +208,25 @@
 )
 
 (define (rotiere-vier w seite-a teile-a seite-b teile-b seite-c teile-c seite-d teile-d)
-  "Rotiert die vier gegebenen Listen im Uhrzeigersinn."
+  ; Rotiert die vier gegebenen Listen im Uhrzeigersinn.
   (letrec*
     (
       (get
         (lambda (seite)
-          "Gibt den Inhalt einer Würfelseite zurück."
+          ; Gibt den Inhalt einer Würfelseite zurück.
           (func seite "" w)
         )
       )
       (set
         (lambda (seite wert)
-          "Setzt den Inhalt einer Würfelseite"
+          ; Setzt den Inhalt einer Würfelseite.
           (func seite "-set!" w wert)
         )
       )
       (rot
         (lambda (A teile-A B teile-B)
-          "Dreht alle Elemente an Position (a1, a2, a3) der Liste A auf neue Elemente"
-          "an Position (b1, b2, b3) in Liste B. Der Rest der Liste B bleibt erhalten."
+          ; Dreht alle Elemente an Position (a1, a2, a3) der Liste A auf neue Elemente
+          ; an Position (b1, b2, b3) in Liste B. Der Rest der Liste B bleibt erhalten.
           (set-n
             (set-n
               (set-n
@@ -244,14 +259,14 @@
 )
 
 (define (zug! w aktion)
-  "Einen einzelnen Zug durchführen."
+  ; Einen einzelnen Zug durchführen.
   ;(print aktion)
   (letrec
     (
       (einzeln
         (lambda (a)
-          "Simple Unterscheidung je nach Zugart bestimmte Seiten drehen. Referenz für die Zahlen"
-          "ist die Anmerkung in 'rotiere'"
+          ; Simple Unterscheidung je nach Zugart bestimmte Seiten drehen. Referenz für die Zahlen
+          ; ist die Anmerkung in 'rotiere'.
           (case a
             ((:F)
               (rotiere w 'front)
@@ -284,7 +299,7 @@
       )
       (aufruf
         (lambda (a)
-          "Solange ziehen, bis nichtsmehr zum Ziehen existiert."
+          ; Solange ziehen, bis nichtsmehr zum Ziehen existiert.
           (if (list? a)
             (if (null? a) '()
               (begin
@@ -303,11 +318,11 @@
     ; alle Aktionen durchkauen
     (aufruf aktion)
   )
-  '()
+  w
 )
 
 (define (zug w folge)
-  "Alle Züge der Restfolge ausführen."
+  ; Alle Züge der Restfolge ausführen.
   (if (null? folge)
     w ; Cube, bei dem alle Züge ausgeführt wurden
     (begin
@@ -318,12 +333,12 @@
 )
 
 (define (folge-ausgeben folge)
-  "Gibt die Befehle in auszuführender Reihenfolge aus."
+  ; Gibt die Befehle in auszuführender Reihenfolge aus.
   (letrec*
     (
       (anhaengen
+        ; Verkettung der einzelnen Listenbefehle.
         (lambda (f)
-          "Verkettung der einzelnen Listenbefehle"
           (if (null? f)
             ""
             (let
@@ -355,14 +370,161 @@
   )
 )
 
+; Erstellt einen unbenutzten Würfel und dreht ihn in der gegebenen Reihenfolge.
 (define (wuerfel! . folge)
-  "Erstellt einen unbenutzten Würfel und dreht ihn in der gegebenen Reihenfolge"
   (folge-ausgeben folge)
   (zug (make-wuerfel) folge)
 )
 
+; Gibt eine zufällige Reihenfolge an Zugsymbolen zurück, die auch mehrfach auftauchen können.
+(define (mischen anzahl)
+  (if (= anzahl 0)
+    '()
+    (cons (get-n symbole (random (length symbole))) (mischen (- anzahl 1)))
+  )
+)
+
+(define (mischen! anzahl)
+  (apply wuerfel! (mischen anzahl))
+)
+
+; ---
+; Lösungsvorschläge
+
+; Cache mit Hash
+(define (hash w)
+  ; Erzeugt einen Hashwert für die Funktion
+  (letrec*
+    (
+      (char
+        (lambda (c)
+          (if (null? c)
+            0
+            (+
+              (case (car c)
+                ((W) 0)
+                ((Y) 1)
+                ((R) 2)
+                ((G) 3)
+                ((B) 4)
+                ((O) 5)
+              )
+              (* 6 (char (cdr c)))
+            )
+          )
+        )
+      )
+      (h
+        (lambda (seiten)
+          (if (null? seiten)
+            0
+            (+ (char (func (car seiten) "" w)) (* 54 (h (cdr seiten))))
+          )
+        )
+      )
+    )
+    (h '(front back left right top down))
+  )
+)
+
+(define *cache
+  (letrec
+    (
+      (*h (make-hashtable))
+      (tiefe 3)
+      (aufruf
+        (lambda (w t)
+          ; Der genaue Inhalt der Tabelle ist wirklich irrelevant.
+          ; Kann bei Bedarf jederzeit errechnet werden - einfach solange die Operationen durchlaufen,
+          ; bis eine mit t-1 gefunden ist.
+          (hashtable-put! *h (hash w) t)
+
+          (if (> t 0)
+            (letrec*
+              (
+                (n (- t 1))
+                (alle-symbole
+                  (lambda (s)
+                    (if (null? s)
+                      '()
+                      (begin
+                        (aufruf (zug! (copy w) (car s)) n)
+                        (alle-symbole (cdr s))
+                      )
+                    )
+                  )
+                )
+              )
+              (alle-symbole symbole)
+            )
+            '()
+          )
+        )
+      )
+    )
+    (aufruf (make-wuerfel) tiefe)
+    *h
+  )
+)
+
+(define (gelöst? w)
+  (hashtable-contains? *cache (hash w))
+)
+
+; Lösungsalgorithmen
+
+; Trivialer Lösungsalgorithmus, der innerhalb einer maximalen Tiefe nach möglichen Lösungen sucht.
+(define (tiefensuche w max bisher)
+  (cond ((< max 0) '())
+        ((gelöst? w) (reverse bisher))
+        (else 
+          (letrec
+            (
+              (s symbole)
+              (rekursiv
+                (lambda (w s)
+                  (if (null? s)
+                    '()
+                    (letrec*
+                      (
+                        (ret (tiefensuche (zug! (copy w) (car s)) (- max 1) (cons (car s) bisher)))
+                      )
+                      (if (null? ret)
+                        (rekursiv w (cdr s))
+                        ret
+                      )
+                    )
+                  )
+                )
+              )
+            )
+            (rekursiv w s)
+          )
+        )
+  )
+)
+
 ; Superflip!
-(ausgabe (wuerfel! R L U2 F U- D F2 R2 B2 L U2 F- B- U R2 D F2 U R2 U))
+;(ausgabe (wuerfel! R L U2 F U- D F2 R2 B2 L U2 F- B- U R2 D F2 U R2 U))
 
 ; cube20.org, nur nach 20 Zügen lösbarer Würfel
-(ausgabe (wuerfel! F U- F2 D- B U R- F- L D- R- U- L U B- D2 R- F U2 D2))
+;(ausgabe (wuerfel! F U- F2 D- B U R- F- L D- R- U- L U B- D2 R- F U2 D2))
+
+(print (gelöst? (make-wuerfel)))
+
+(let
+  (
+    (t (wuerfel! D2 L R U- R))
+  )
+  (ausgabe t)
+  (print (gelöst? t))
+  (let
+    (
+      (ts (tiefensuche t 2 '()))
+    )
+    (if (list? ts)
+      (folge-ausgeben ts)
+      (print ts)
+    )
+  )
+)
