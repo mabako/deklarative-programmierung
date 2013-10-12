@@ -207,8 +207,8 @@
       (n (* p q))
       (phi (* (- p 1) (- q 1)))
 
-      (e (prime 0 n)) ; eine zu n teilerfremde Zahl - Primzahlen sind immer teilerfremd
-                      ; vor allem da n ja keine Primzahl ist, wird das immer der Fall sein.
+      (e (prime 2 (- phi 1))) ; eine zu phi(n) teilerfremde Zahl - Primzahlen sind immer teilerfremd
+                              ; phi(n) ist nichtmal ne Primzahl.
 
       (d (cadr (erweiterter_euklid e phi)))
     )
