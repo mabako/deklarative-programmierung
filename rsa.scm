@@ -44,32 +44,6 @@
 (assert (pow 2 5 7) (modulo 32 7))
 (assert (pow 4 13 497) 445)
 
-
-; Langsam. Rekursiv
-;(define (pow basis exponent mod)
-;  (letrec*
-;    (
-;      (f
-;        (lambda (ex ergebnis)
-;         ;(print "pow " basis " " exponent " " mod " " ex " " ergebnis)
-;          (let
-;            (
-;              (e (modulo (* basis ergebnis) mod))
-;            )
-;            (if (= ex 1) e (f (- ex 1) e))
-;          )
-;        )
-;      )
-;    )
-;    (f exponent 1)
-;  )
-;)
-
-; normaler euklidischer Algorithmus
-; (define (euklid a b)
-  ; (if (= b 0) a (euklid b (modulo a b)))
-; )
-
 ; erweiterter pro-Algorithmus
 (define (erweiterter_euklid a b)
   (if (= b 0)
@@ -90,12 +64,16 @@
 )
 
 ; Prüft, ob eine Zahl eine Primzahl ist laut Miller-Rabin-Test.
+;   http://mathworld.wolfram.com/Rabin-MillerStrongPseudoprimeTest.html
+; > Given an odd integer n [1], let n=2^rs+1 with s odd [2,3].
+; > Then choose a random integer a with 1<=a<=n-1 [4].
+; > If a^s=1 (mod n) [5] or a^(2^js)=-1 (mod n) [6] for some 0<=j<=r-1, then n passes the test.
 (define (prim? n)
   (cond
     ((< n 2) #f)
-    ((>= n 2152302898747) (error "prim?" "Zu große Zahl" n))
+    ((>= n 2152302898747) (error "prim?" "Zu große Zahl" n)) ; '(2, 3) sind ausreichend für alle Zahlen < dieser
     ((memq n '(2 3 5 7 11)) #t)
-    ((odd? n)
+    ((odd? n) ; [1]
       (letrec*
         (
           (calcR
@@ -106,15 +84,12 @@
               )
             )
           )
-          (r (calcR (- n 1)))
-          (s (/ (- n 1) (expt 2 r)))
+          (r (calcR (- n 1))) ; [2]
+          (s (/ (- n 1) (expt 2 r))) ; [3]
 
+          ; [6] a^(2js) = -1 mod n
           (testPotenzen
             (lambda (a r)
-              ;(print "pot " a " " r)
-              (if (>= r 0)
-                '()
-              )
               (cond ((< r 0) #f)
                     ((= (- n 1) (pow a (* (expt 2 r) s) n)) #t)
                     (else (testPotenzen a (- r 1)))
@@ -122,6 +97,7 @@
             )
           )
 
+          ; [5] a^s = 1 mod n
           (testEinzeln
             (lambda (a r)
               ;(print "einz " a " " r)
@@ -142,12 +118,13 @@
             )
           )
         )
-        (test r '(2 3 5 7 11))
+        (test r
+          '(2 3 5 7 11) ; [4]
+        )
       )
     )
     (else #f)
   )
-  ; odd If a^s=1 (mod n) or a^(2^js)=-1 (mod n) for some 0<=j<=r-1, then n passes the test. A prime will pass the test for all a.
 )
 
 (assert (prim? 2) #t)
@@ -169,26 +146,6 @@
 (define (schlüssel)
   (letrec*
     (
-      ;(knödel
-        ; wahrscheinlich die ungewöhnlichste/doofste Idee, Zahlen für RSA zu generieren.
-        ; Insbesondere, weil hier ja nichtmal Primzahlen rauskommen.
-        ;(lambda (start skip nicht)
-        ;  (let
-        ;    (
-        ;      (a (+ (* 6 start) 1))
-        ;      (b (+ (* 12 start) 1))
-        ;      (c (+ (* 18 start) 1))
-        ;    )
-        ;    (if (and (not (= nicht (* a b c))) (prim? a) (prim? b) (prim? c))
-        ;      (if (= skip 0) (* a b c) (knödel (+ start 1) (- skip 1) nicht))
-        ;      (knödel (+ start 1) skip nicht)
-        ;    )
-        ;  )
-        ;)
-      ;)
-      ;(p (knödel 5 (random 5) 0))
-      ;(q (knödel 5 (random 5) p))
-
       ; Berechnet eine Primzahl im Bereich von <= p < bis.
       (prime
         (lambda (von bis)
@@ -218,19 +175,6 @@
     )
   )
 )
-
-; (define p 307)
-; (define q 859)
-; (define n (* p q))
-; (define phi (* (- p 1) (- q 1)))
-; (define e 1721)
-;(define d (cadr (erweiterter_euklid e phi)))
-
-; ewartet: 2291 110182 93977 3622 77784 98507 38295 105415 8355 22915 45595
-; für "Dies ist ein Klartext."
-
-; (print "privater Schlüssel: e=" e ", N=" n)
-; (print "öffentlicher Schlüssel: d=" d ", N=" n)
 
 ; Verschlüsselt einen Text m. Gibt eine Liste mit den verschlüsselten Blöcken der Länge (blocklänge) zurück.
 (define (verschlüsseln m e n)
