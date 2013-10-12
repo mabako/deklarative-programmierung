@@ -1,3 +1,4 @@
+(module rsa)
 ; Total nicht von http://de.wikipedia.org/wiki/RSA-Kryptosystem geklaut.
 
 ; Assertions.
