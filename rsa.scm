@@ -298,7 +298,7 @@
     (n (car s))
     (e (cadr s))
     (d (caddr s))
-    (text (verschlüsseln "Dieser Text soll nur soetwas wie ein Beispiel sein, braucht den jemand?" e n))
+    (text (verschlüsseln "Dieser Text soll nur soetwas wie ein Beispiel sein, braucht den jemand? Und nebenbei, es ist ja nicht so, als ob andere RSA-Implementierungen mit Blöcken was anfangen könnten." e n))
   )
   (print " n = " n ", blocklänge(n) =  " (blocklänge n))
   (print " öffentlicher Schlüssel e = " e)
