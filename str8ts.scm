@@ -7,15 +7,7 @@
 (define (ausgabe grid)
   (letrec*
     (
-      (schwarz
-        (lambda (z)
-          (string-append
-            "\033[37;1;40m"
-            z
-            "\033[0m"
-          )
-        )
-      )
+      (schwarz (lambda (z) (string-append "\033[37;1;40m" z "\033[0m")))
       (zeichen
         (lambda (z)
           (cond ((eq? z 0) "_")
@@ -56,16 +48,14 @@
 (define (set-xy grid x y elem)
   (if (= y 1)
     (letrec*
-      (
-        (set-x
-          (lambda (grid x elem)
-            (if (= x 1)
-              (set-car! grid elem)
-              (set-x (cdr grid) (- x 1) elem)
-            )
+      ((set-x
+        (lambda (grid x elem)
+          (if (= x 1)
+            (set-car! grid elem)
+            (set-x (cdr grid) (- x 1) elem)
           )
         )
-      )
+      ))
       (set-x (car grid) x elem)
     )
     (set-xy (cdr grid) x (- y 1) elem)
@@ -199,12 +189,8 @@
     (print (lösen grid))
     (ausgabe grid)
   )
-
-  ; Lösen
-  ; (ausgabe (lösen (konvertiere grid)))
 )
 
-; Zur Abwechslung mal ein Str8ts lösen
 (str8ts
    X  0  6  0 -4  X  0  0  X
    0  0  X  0  0  X  0  5  X
