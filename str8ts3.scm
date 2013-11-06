@@ -1,5 +1,8 @@
 (module str8ts3)
 
+; ausführliche Ausgabe für 'print?
+(define verbose #t)
+
 ; allgemeiner unbekannter Wert
 (define ? '?)
 
@@ -23,10 +26,8 @@
       (the-grid
         (vector-map
           (lambda (e)
-            (vector-map (lambda (_) (iota n 1)) (make-vector n))
-          )
-          (make-vector n)
-        ))
+            (vector-map (lambda (_) (iota n 1)) (make-vector n)))
+          (make-vector n)))
       (size n))
       (letrec(
 
@@ -34,20 +35,19 @@
           (vector-ref (vector-ref the-grid x) y)))
 
         (set (lambda (x y value)
-          ; falls Zahl: gültiger Wert?
-          (if (and (number? value) (or (< value (- n)) (> value n)))
+          ; falls Zahl: gültiger Wert? [-n .. 0 .. n] sind gültig, da <= 0 schwarze Felder sind.
+          (if (and (number? value) (> (abs value) n))
             (error "make-grid" "invalid value" value))
           (vector-set! (vector-ref the-grid x) y value)
 
           ; falls Zahl: Möglichkeiten aus anderen Spalten/Zeilen entfernen
           (if (number? value)
-            (begin
-              (let this ((e 0))
-                (if (< e size)
-                  (let((value' (get e y)) (value'' (get x e)))
-                    (if (list? value') (remq! (abs value) value'))
-                    (if (list? value'') (remq! (abs value) value''))
-                    (this (+ e 1))))))))))
+            (let this ((e 0))
+              (if (< e size)
+                (let((value' (get e y)) (value'' (get x e)))
+                  (if (list? value') (remq! (abs value) value'))
+                  (if (list? value'') (remq! (abs value) value''))
+                  (this (+ e 1)))))))))
         (lambda (message x y . params)
           (cond
             ((or (< x 0) (>= x size))
@@ -69,6 +69,10 @@
       (size n))
       (letrec*
         (
+          ; Folding: übergibt der Funktion fn (x y value previous-value), mit wert als
+          ; Startwert für previous-value. Nach jedem Schritt wird der Wert, der zurückgegeben
+          ; wird, als previous-value verwendet.
+          ; Das letzte Ergebnis wird zurückgegeben.
           (fold (lambda (fn wert)
             (let this ((x 0) (y 0) (w wert))
               (if (< y n)
@@ -80,9 +84,12 @@
                   ))
                 w
               ))))
+
+          ; Variante von fold, die die Funktion fn ohne Wissen des vorherigen Wertes ausführt und
+          ; unspecified zurückgibt.
           (each (lambda (fn)
-            (fold (lambda (x y value prev) (fn x y value)) #f)
-            #f
+            (fold (lambda (x y value prev) (fn x y value)) (unspecified))
+            (unspecified)
           ))
         )
         (lambda (message . params)
@@ -101,16 +108,12 @@
               (each (lambda (x y value)
                 (display
                   (cond
-                    ; ((list? value) ".")
-                    ((list? value) value)
+                    ((and verbose (list? value)) value)
+                    ((list? value) ".")
                     ((< value 0) (schwarz (number->string (- value))))
                     ((= value 0) (schwarz " "))
-                    (else value)
-                  )
-                )
-                (if (= x (- n 1)) (display "\n"))
-              ))
-            )
+                    (else value)))
+                (if (= x (- n 1)) (display "\n")))))
             ; Gibt true zurück, falls das Grid gelöst ist.
             ; Gelöst ist es, falls es kein Feld mehr gibt, welches keinen Wert enthält.
             ; (d.h. enthält Liste von Möglichkeiten)
@@ -135,13 +138,7 @@
             (else
               (if (>= (length params) 2)
                 (apply grid message params)
-                (error "make-str8ts" "Unknown message" message)))
-          )
-        )
-      )
-    )
-  )
-)
+                (error "make-str8ts" "Unknown message" message)))))))))
 
 ; Initialisiert ein str8ts, belegt die Werte vor und ruft danach 'lösen auf
 (define str8ts
@@ -151,9 +148,7 @@
       (s 'print)
       (print "Lösbar: " (s 'solvable?))
       (print "Gelöst? " (s 'solved?))
-    )
-  )
-)
+)))
 
 ; http://www.str8ts.com/str8ts_6x6_sample_pack.pdf
 (str8ts ; Easy No. 1
