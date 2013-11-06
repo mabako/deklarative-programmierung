@@ -1,3 +1,5 @@
+(module str8ts)
+
 ; Möglichkeiten mit ausgeben
 (define verbose #t)
 
@@ -22,21 +24,60 @@
         ((< c 0) (schwarz (number->string (- c))))
         ((= c 0) (schwarz " "))))))
 
+; Allgemeines get
+(define get'
+  (lambda (v x y) (vector-ref (vector-ref v x) y)))
 
-; s * s-Grid: str8ts sind immer symetrisch
+; s * s-Grid: str8ts sind immer symetrisch.
+; x ist die Spalte, y die Zeile
 (define make-str8ts
   (lambda (s)
-    (let
+    (letrec*
       (
         (grid (make-vector s (make-vector s (iota s 1)))) ; mit (1 ... s) vorbelegen
         (size s)
 
+        (get (lambda (x y) (get' grid x y)))
+        (set (lambda (x y e) (print x " " y " -> " e) (vector-set! (vector-ref grid x) y e)))
+
+; geht bestimmt auch schöner
+        (each (lambda (fn)
+          (letrec*(
+            (spalte (lambda (x y)
+              (if (= x size) '()
+                (begin
+                  (print " x = " x ",  y = " y)
+                  (fn x y (get x y))
+;                  (spalte (+ x 1) y)
+                )
+            )))
+            (zeile (lambda (y)
+              (if (= y size) '()
+                (begin
+                  (print "y = " y)
+                  (spalte 0 y)
+;                  (zeile (+ y 1))
+                )
+              )
+            )))
+            
+          (zeile 0))
+        ))
+        #|
         (each (lambda (fn . v)
-          (apply vector-map!
-            (lambda v'
-              (apply vector-map fn v')
-            )
-            v)))
+          (let((x -1))
+            (apply vector-map
+              (lambda v'
+                (set! x (+ x 1))
+                (let((y -1))
+                  (apply vector-map
+                    (lambda e
+                      (set! y (+ y 1))
+                      (apply fn x y e)
+                    )
+                    v')))
+              v))))
+        |#
       )
       (lambda (message . params)
         (cond
@@ -46,25 +87,26 @@
               ; für vector-map in ein s*s-Vektor konvertieren
               (alsvektor (list->vector (map list->vector (list-split werte s)))))
               ; jeden Wert mappen
-              (each (lambda (a b)
-                  (if (eqv? b '?) a (list b))
-                )
-                grid alsvektor)
-            )
-          )
+              (each (lambda (x y a)
+                  (let ((b (get' alsvektor x y)))
+                    (print b ", " a)
+                    (set x y (if (eqv? b '?) a (list b)))
+                  )
+                ))))
+
           ; Ausgeben
           ((eqv? message 'print)
-            (vector-map (lambda (e)
-              (vector-map (lambda (x)
+            (print grid)
+            (each
+              (lambda (x y c)
                 (print-char
                   (cond
-                    ((list? x) (if (= (length x) 1) (car x) (if verbose x ".")))
-                    (else x)
-                  ))
-              ) e)
-              (print)
-            ) grid)
-          )
+                    ((list? c) (if verbose c "."))
+                    (else c)))
+                  ; neue Zeile
+                  (if (= y (- size 1)) (print))
+                (print))))
+
           (else (error 'make-str8ts "Unknown message" message))
         )
       )
