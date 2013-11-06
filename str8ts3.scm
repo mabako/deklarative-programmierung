@@ -1,3 +1,5 @@
+(module str8ts3)
+
 ; allgemeiner unbekannter Wert
 (define ? '?)
 
