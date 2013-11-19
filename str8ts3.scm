@@ -1,3 +1,5 @@
+; TODO get-column und select mit Funktion, die mindestens die Parameter (x y value) hat, ersetzen
+
 (module str8ts3)
 
 ; ausführliche Ausgabe für 'print?
@@ -34,22 +36,44 @@
         (get (lambda (x y)
           (vector-ref (vector-ref the-grid x) y)))
 
+        ; Veränderungen am Rückgabewert werden nur über remq! u.ä. sichtbar, sonst muss set
+        ; verwendet werden.
+        (select (lambda (x y)
+          (if (pair? x)
+            ; [(car x) ... (cdr x)] als Intervall
+            (take (drop (vector->list
+              (vector-map (lambda (e) (vector-ref e y)) the-grid)) (car x)) (- (cdr x) (car x)))
+            ; [(car y) ... (cdr y)] als Intervall
+            (take (drop (vector->list (vector-ref the-grid x)) (car y)) (- (cdr y) (car y)))
+          )
+        ))
+        (get-column (lambda (x y)
+          (cond ((number? y) (select (cons 0 size) y))
+                ((number? x) (select x (cons 0 size))))))
+
         (set (lambda (x y value)
           ; falls Zahl: gültiger Wert? [-n .. 0 .. n] sind gültig, da <= 0 schwarze Felder sind.
           (if (and (number? value) (> (abs value) n))
-            (error "make-grid" "invalid value" value))
+            (error "make-grid/set" "invalid value" value))
           (vector-set! (vector-ref the-grid x) y value)
 
           ; falls Zahl: Möglichkeiten aus anderen Spalten/Zeilen entfernen
           (if (number? value)
-            (let this ((e 0))
-              (if (< e size)
-                (let((value' (get e y)) (value'' (get x e)))
-                  (if (list? value') (remq! (abs value) value'))
-                  (if (list? value'') (remq! (abs value) value''))
-                  (this (+ e 1)))))))))
+            (begin
+              (map (lambda (e) (if (list? e) (remq! (abs value) e))) (get-column x #f))
+              (map (lambda (e) (if (list? e) (remq! (abs value) e))) (get-column #f y))))))
+
+        (set2 (lambda (pos index value)
+          (if (pair? (car pos))
+            (set (+ (caar pos) index) (cdr pos) value)
+            (set (car pos) (+ (cadr pos) index) value)
+        ))))
         (lambda (message x y . params)
           (cond
+            ; Bounds-Prüfung nur begrenzt für booleans sinnvoll.
+            ((eqv? message 'get-column) (get-column x y))
+            ((eqv? message 'select) (select x y))
+            ((eqv? message 'set2) (set2 x y (car params)))
             ((or (< x 0) (>= x size))
               (error "make-grid" "x out of bounds" x))
             ((or (< y 0) (>= y size))
@@ -63,9 +87,27 @@
                 (else
                   (error "make-grid" "Unknown message" message))))))))))
 
+; Hilfsfunktion zum aufteilen von Compartments an den 'schwarzen' Feldern
+(define split-compartments
+  (lambda (liste)
+    (let this ((L liste) (index 0) (start #f) (compartments '()))
+      (let((new-list (if (boolean? start) compartments (cons (cons start index) compartments))))
+        (cond
+          ; ende der Liste
+          ((null? L) new-list)
+
+          ; Ende des Compartments
+          ((and (not (list? (car L))) (<= (car L) 0))
+            (this (cdr L) (+ index 1) #f new-list))
+          (else
+            ; eventuell fängt hier das Compartment an
+            (this (cdr L) (+ index 1) (if (boolean? start) index start) compartments)
+          ))))))
+
 (define make-str8ts
   (lambda (n)
     (let ((grid (make-grid n))
+      (compartments '())
       (size n))
       (letrec*
         (
@@ -91,6 +133,34 @@
             (fold (lambda (x y value prev) (fn x y value)) (unspecified))
             (unspecified)
           ))
+
+          ; Lösungsstrategien
+          (compartment-check (lambda (c)
+            (if (null? c) #f
+              (letrec*(
+                  (values (grid 'select (caar c) (cdar c)))
+                  (len' (length values))
+                  (min' (min (filter number? values)))
+                  (max' (min (filter number? values)))
+                )
+                (if (not (null? min'))
+                  (map
+                    (lambda (e index)
+                      (if (list? e)
+                        ; alle Möglichkeiten entfernen, die außerhalb des noch verfügbaren
+                        ; Rahmens liegen (ausgehend von Minimum und Maximum im Bereich)
+                        (grid 'set2
+                          (car c) ; Position als pair
+                          index ; Offset, der zur Position addiert werden muss
+                          (filter (lambda (x) (> x (- (car max') len')))
+                            (filter (lambda (x) (< x (+ (car min') len'))) e)))
+                      )
+                    ) values (iota len'))
+                )
+                (or (compartment-check (cdr c)))
+              )
+
+          )))
         )
         (lambda (message . params)
           (case message
@@ -103,6 +173,19 @@
                   (let((value (list-ref (list-ref L y) x)))
                     (if (number? value)
                       (grid 'set x y value)))))))
+
+            ; Compartments herausfinden. Damit kann dann später leichter gesucht werden,
+            ; wenn es z.B. um range-checks geht.
+            ((find-compartments)
+              (let this ((e 0))
+                (if (< e size)
+                  (begin
+                    (map (lambda (x) (set! compartments (cons (cons e x) compartments)))
+                      (split-compartments (grid 'get-column e #f)))
+                    (map (lambda (y) (set! compartments (cons (cons y e) compartments)))
+                      (split-compartments (grid 'get-column #f e)))
+                    (this (+ e 1))))) (print compartments))
+
             ; Gibt das Grid auf der Konsole aus.
             ((print)
               (each (lambda (x y value)
@@ -135,6 +218,16 @@
                     (not (list? value))
                     (> (length value) 0))
                 )) #t))
+
+            ; Lösung versuchen.
+            ((solve)
+              (or
+                (compartment-check compartments)
+                ; als letztes: allgemeine Lösungsstrategie mit Backtracking
+                #f
+              )
+            )
+
             (else
               (if (>= (length params) 2)
                 (apply grid message params)
@@ -145,9 +238,12 @@
   (lambda values
     (let ((s (make-str8ts (sqrt' (length values)))))
       (apply s 'set-all values)
+      (s 'find-compartments)
       (s 'print)
       (print "Lösbar: " (s 'solvable?))
       (print "Gelöst? " (s 'solved?))
+      (print (s 'solve))
+      (s 'print)
 )))
 
 ; http://www.str8ts.com/str8ts_6x6_sample_pack.pdf
