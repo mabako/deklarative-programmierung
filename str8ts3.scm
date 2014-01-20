@@ -253,7 +253,35 @@
                     ) values (iota len')))
                 (stranded (cdr c))
               )
-          )))          
+          )))
+
+          ; Prüft, ob alle Compartments mit logisch gültigen Werten besetzt sind.
+          ; Tritt (aktuell?) nur als Möglichkeit bei Weekly Extreme Str8ts auf.
+          (valid? (lambda ()
+            (letrec*((same? (lambda (a b)
+                ; haben 2 Listen die gleichen Elemente, egal, in welcher Reihenfolge
+                (if (null? a) (null? b)
+                  (and
+                    (= (length a) (length b))
+                    (memq (car a) b)
+                    (same? (cdr a) (remq (car a) b)))))))
+              (let this ((c compartments))
+                (if (null? c)
+                  #t
+                  (letrec*(
+                      (values (grid 'select (caar c) (cdar c)))
+                      (len' (length values))
+                      (numvalues (filter number? values))
+                    )
+                    (if (eq? len' (length numvalues))
+                      (and (same? (iota len' (apply min numvalues)) numvalues) (this (cdr c)))
+                      ; sonst, nicht alle Compartments gefüllt.
+                      (this (cdr c))
+                    )
+                  )
+                )
+              )
+          )))
 
           ; Hash ist der Wert, der ursprünglich (vor der versuchten Lösung) erstellt wurde.
           ; Kommt hier ein anderer Wert raus, wurde durch den Lösungsschritt (called) eine
@@ -323,12 +351,17 @@
           ; Leere Felder komplett ohne Möglichkeiten sind nicht lösbar, weil ja nichts
           ; eingetragen werden kann.
           (solvable? (lambda ()
-            (fold (lambda (x y value prev)
-              (and prev
-                (or
-                  (not (list? value))
-                  (> (length value) 0))
-              )) #t)))
+            (and
+              (fold (lambda (x y value prev)
+                (and prev
+                  (or
+                    (not (list? value))
+                    (> (length value) 0))
+                )) #t)
+            ; außerdem sollen alle Compartments gültig sein
+              (if (not (valid?))
+                (begin (print "Ungültige Lösung...") #f)
+                #t))))
 
 
           ; Ausgabe
@@ -484,6 +517,7 @@
 )
 |#
 
+#|
 ; Daily Str8ts 1890
 (str8ts
    8  ? -0 -0  ?  ?  ? -0 -0
@@ -496,10 +530,10 @@
   -0  ?  ? -2  ?  ? -0  ?  ?
   -0 -0  ?  ?  ? -0 -4  ?  ?
 )
+|#
 
 ; The Weekly Extreme Str8ts Puzzle
 ; #187, January 19 - January 25
-#|
 (str8ts
    ?  7  6  ?  ? -0  ?  ?  3
    ?  ?  ?  ?  ?  ? -0  ?  ?
@@ -511,4 +545,3 @@
    2  ?  ?  ?  ?  ?  ?  ?  ?
   -0 -0 -3  ?  ?  ?  ?  7  ?
 )
-|#
