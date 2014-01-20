@@ -20,6 +20,16 @@
         wurzel
         (error 'sqrt' "Wurzel ist keine ganze Zahl" zahl)))))
 
+; Konvertiert eine Liste aus Zahlen zu einem String
+(define list->string' (lambda (c)
+  (if (null? c)
+    ""
+    (let((text (number->string (car c))) (rest (list->string' (cdr c))))
+      (if (equal? "" rest)
+        text
+        (string-append text "+" rest)
+    )))))
+
 ; n*n-Grid
 ; TODO eventuell mit bei make-str8ts einschließen?
 (define make-grid
@@ -36,8 +46,7 @@
         (get (lambda (x y)
           (vector-ref (vector-ref the-grid x) y)))
 
-        ; Veränderungen am Rückgabewert werden nur über remq! u.ä. sichtbar, sonst muss set
-        ; verwendet werden.
+        ; Veränderungen am Rückgabewert müssen über set erfolgen.
         (select (lambda (x y)
           (if (pair? x)
             ; [(car x) ... (cdr x)] als Intervall
@@ -51,17 +60,32 @@
           (cond ((number? y) (select (cons 0 size) y))
                 ((number? x) (select x (cons 0 size))))))
 
+        (raw-set (lambda (x y value)
+          (vector-set! (vector-ref the-grid x) y value)))
+        (set-column (lambda (x y values)
+          (let((index 0))
+            (map
+              (lambda (e)
+                (if (number? x) (raw-set x index e) (raw-set index y e))
+                (set! index (+ 1 index))
+              )
+              values
+            )
+          )
+        ))
+
         (set (lambda (x y value)
           ; falls Zahl: gültiger Wert? [-n .. 0 .. n] sind gültig, da <= 0 schwarze Felder sind.
           (if (and (number? value) (> (abs value) n))
             (error "make-grid/set" "invalid value" value))
-          (vector-set! (vector-ref the-grid x) y value)
+          (raw-set x y value)
 
           ; falls Zahl: Möglichkeiten aus anderen Spalten/Zeilen entfernen
           (if (number? value)
             (begin
-              (map (lambda (e) (if (list? e) (remq! (abs value) e))) (get-column x #f))
-              (map (lambda (e) (if (list? e) (remq! (abs value) e))) (get-column #f y))))))
+              (set-column x #f (map (lambda (e) (if (list? e) (remq (abs value) e) e)) (get-column x #f)))
+              (set-column #f y (map (lambda (e) (if (list? e) (remq (abs value) e) e)) (get-column #f y)))
+            ))))
 
         (set2 (lambda (pos index value)
           (if (pair? (car pos))
@@ -74,6 +98,7 @@
             ((eqv? message 'get-column) (get-column x y))
             ((eqv? message 'select) (select x y))
             ((eqv? message 'set2) (set2 x y (car params)))
+            ((eqv? message 'serialize) (obj->string the-grid))
             ((or (< x 0) (>= x size))
               (error "make-grid" "x out of bounds" x))
             ((or (< y 0) (>= y size))
@@ -134,33 +159,94 @@
             (unspecified)
           ))
 
-          ; Lösungsstrategien
+          ; Einzelne Werte einsetzen
+          (fill-singles (lambda ()
+            (each (lambda (x y e)
+              (if (and (list? e) (= 1 (length e)))
+                (begin
+                  (print "setze x=" x ", y=" y " auf " e)
+                  (grid 'set x y (car e))
+                  (print-all)
+                ))))))
+
+          ; Werte, die nicht möglich sind, entfernen
           (compartment-check (lambda (c)
             (if (null? c) #f
               (letrec*(
                   (values (grid 'select (caar c) (cdar c)))
                   (len' (length values))
-                  (min' (min (filter number? values)))
-                  (max' (min (filter number? values)))
+                  (numvalues (filter number? values))
                 )
-                (if (not (null? min'))
+                (if (not (null? numvalues))
                   (map
                     (lambda (e index)
                       (if (list? e)
-                        ; alle Möglichkeiten entfernen, die außerhalb des noch verfügbaren
-                        ; Rahmens liegen (ausgehend von Minimum und Maximum im Bereich)
-                        (grid 'set2
-                          (car c) ; Position als pair
-                          index ; Offset, der zur Position addiert werden muss
-                          (filter (lambda (x) (> x (- (car max') len')))
-                            (filter (lambda (x) (< x (+ (car min') len'))) e)))
-                      )
-                    ) values (iota len'))
-                )
-                (or (compartment-check (cdr c)))
-              )
+                        (begin
+                          (print "Feld hat Werte " e ", Werte max. im Bereich von ["
+                            (- (apply max numvalues) len' -1) " ... "
+                            (+ (apply min numvalues) len' -1) "]")
 
+                          ; alle Möglichkeiten entfernen, die außerhalb des noch verfügbaren
+                          ; Rahmens liegen (ausgehend von Minimum und Maximum im Bereich)
+                          (grid 'set2
+                            (car c) ; Position als pair
+                            index ; Offset, der zur Position addiert werden muss
+                            (filter (lambda (x) (> x (- (apply max numvalues) len')))
+                              (filter (lambda (x) (< x (+ (apply min numvalues) len'))) e)))
+                        )
+                      )
+                    ) values (iota len')))
+                (compartment-check (cdr c))
+              )
           )))
+
+          ; Hash ist der Wert, der ursprünglich (vor der versuchten Lösung) erstellt wurde.
+          ; Kommt hier ein anderer Wert raus, wurde durch den Lösungsschritt (called) eine
+          ; Änderung vorgenommen.
+          (to-string (lambda ()
+            (grid 'serialize 0 0)))
+;            (let((s ""))
+;              (each (lambda (x y value)
+;                (set! s (string-append s ","
+;                  (if (list? value)
+;                    (string-append "(" (list->string' value) ")")
+;                    (number->string value))))))
+;              s)))
+
+          (diff (lambda (hash called extra)
+            (print "Änderung durch " extra "? " (not (equal? (to-string) hash))); "; " (to-string))
+            (not (equal? (to-string) hash))
+          ))
+
+          ; alle Lösungsmöglichkeiten probieren
+          (solve (lambda ()
+            (let((hash (to-string)))
+              (print "Neuer Versuch..."); hash)
+              (if
+                (or
+                  (diff hash (fill-singles) "fill-singles")
+                  (diff hash (compartment-check compartments) "compartment-check")
+                  ; als letztes: allgemeine Lösungsstrategie mit Backtracking
+                  #f
+                )
+                (begin
+                  (print-all)
+                  (solve)
+                )
+                #f))))
+
+          ; Ausgabe
+          (print-all (lambda ()
+            (each (lambda (x y value)
+              (if (= x 0) (display "  "))
+              (display
+                (cond
+                  ((and verbose (list? value)) value)
+                  ((list? value) ".")
+                  ((< value 0) (schwarz (number->string (- value))))
+                  ((= value 0) (schwarz " "))
+                  (else value)))
+              (if (= x (- n 1)) (display "\n"))))))
         )
         (lambda (message . params)
           (case message
@@ -187,16 +273,8 @@
                     (this (+ e 1))))) (print compartments))
 
             ; Gibt das Grid auf der Konsole aus.
-            ((print)
-              (each (lambda (x y value)
-                (display
-                  (cond
-                    ((and verbose (list? value)) value)
-                    ((list? value) ".")
-                    ((< value 0) (schwarz (number->string (- value))))
-                    ((= value 0) (schwarz " "))
-                    (else value)))
-                (if (= x (- n 1)) (display "\n")))))
+            ((print) (print-all))
+
             ; Gibt true zurück, falls das Grid gelöst ist.
             ; Gelöst ist es, falls es kein Feld mehr gibt, welches keinen Wert enthält.
             ; (d.h. enthält Liste von Möglichkeiten)
@@ -220,13 +298,7 @@
                 )) #t))
 
             ; Lösung versuchen.
-            ((solve)
-              (or
-                (compartment-check compartments)
-                ; als letztes: allgemeine Lösungsstrategie mit Backtracking
-                #f
-              )
-            )
+            ((solve) (solve))
 
             (else
               (if (>= (length params) 2)
@@ -239,14 +311,15 @@
     (let ((s (make-str8ts (sqrt' (length values)))))
       (apply s 'set-all values)
       (s 'find-compartments)
-      (s 'print)
       (print "Lösbar: " (s 'solvable?))
       (print "Gelöst? " (s 'solved?))
-      (print (s 'solve))
+      (s 'solve)
       (s 'print)
+      (print (if (s 'solved?) "Gelöst" "Nicht lösbar"))
 )))
 
 ; http://www.str8ts.com/str8ts_6x6_sample_pack.pdf
+#|
 (str8ts ; Easy No. 1
   -5 -0  ?  ?  2 -0
    ?  6  ?  ?  ? -0
@@ -255,3 +328,12 @@
   -0  ?  ?  ?  ?  ?
   -0  ?  5  ? -1 -2
 )
+|#
+
+(str8ts
+  -0  ?  ? -3 -0 -0
+  -1  ?  ?  ?  ?  ?
+   ?  ? -0  6  ?  ?
+   ?  ?  3 -0  ?  ?
+   ?  ?  ?  ?  4 -0
+  -5 -6 -0  ?  ? -0)
