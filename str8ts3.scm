@@ -1,9 +1,8 @@
-; TODO get-column und select mit Funktion, die mindestens die Parameter (x y value) hat, ersetzen
-
+(print "-------------------------------------------------")
 (module str8ts3)
 
 ; ausführliche Ausgabe für 'print?
-(define verbose #t)
+(define verbose #f)
 
 ; allgemeiner unbekannter Wert
 (define ? '?)
@@ -99,6 +98,7 @@
             ((eqv? message 'select) (select x y))
             ((eqv? message 'set2) (set2 x y (car params)))
             ((eqv? message 'serialize) (obj->string the-grid))
+            ((eqv? message 'deserialize) (set! the-grid (string->obj x)))
             ((or (< x 0) (>= x size))
               (error "make-grid" "x out of bounds" x))
             ((or (< y 0) (>= y size))
@@ -164,9 +164,9 @@
             (each (lambda (x y e)
               (if (and (list? e) (= 1 (length e)))
                 (begin
-                  (print "setze x=" x ", y=" y " auf " e)
+                  (if #f (print "setze x=" x ", y=" y " auf " e))
                   (grid 'set x y (car e))
-                  (print-all)
+                  (if #f (print-all))
                 ))))))
 
           ; Werte, die nicht möglich sind, entfernen
@@ -182,9 +182,10 @@
                     (lambda (e index)
                       (if (list? e)
                         (begin
-                          (print "Feld hat Werte " e ", Werte max. im Bereich von ["
-                            (- (apply max numvalues) len' -1) " ... "
-                            (+ (apply min numvalues) len' -1) "]")
+                          (if #f
+                            (print "Feld hat Werte " e ", Werte max. im Bereich von ["
+                              (- (apply max numvalues) len' -1) " ... "
+                              (+ (apply min numvalues) len' -1) "]"))
 
                           ; alle Möglichkeiten entfernen, die außerhalb des noch verfügbaren
                           ; Rahmens liegen (ausgehend von Minimum und Maximum im Bereich)
@@ -200,40 +201,135 @@
               )
           )))
 
+          ; entfernt einzelne Ziffern, die keinen direkten Vorgänger oder nachfolger
+          ; in diesem Compartment haben. z.B. (1 2) (1 2 4) - gibt keine 3, damit entfällt die 4.
+          ; Jetzt neu auch mit Sequenzen. Löst damit gewisse Pair/Triple-Situationen auf, wenn zB.
+          ; in einem Compartment (1 2) (1 2 3) (1 2) steht, prüft es nachfolgend, ob
+          ;    (1 2 3) -> wenn entweder 1 oder 2 aus dem ganzen restlichen rausgestrichen werden,
+          ;       sind nicht mehr genug Zahlen zur Lösung vorhanden. Diese werden somit entfernt.
+          (stranded (lambda (c)
+            (if (null? c) #f
+              (letrec*(
+                  (values (grid 'select (caar c) (cdar c)))
+                  (len' (length values))
+                )
+                (if (> (length values) 1) ; für eine einzelne Zelle sind Vorgänger/Nachfolger egal.
+                  (map
+                    (lambda (e index)
+                      (if (list? e)
+                        (letrec*
+                          (
+                            (all-values
+                              (delete-duplicates
+                                (let this ((i index) (v values))
+                                  (cond ((null? v) '())
+                                        ((= i 0) (this -1 (cdr v)))
+                                        (else (append (this (- i 1) (cdr v)) (if (number? (car v)) (list (car v)) (car v)))))
+                                )
+                              )
+                            )
+                            (possible? (lambda (value start)
+                              ; von im Intervall von [-len' ... len'] suchen, ob eine einzige durchgängige
+                              ; Zahlenfolge der Länge len' existiert.
+                              (if (> start 0) #f
+                                (let ((erwartet (remq value (iota len' (+ value start)))))
+                                  (if (find (lambda (e) (not (memq e all-values))) erwartet)
+                                    (possible? value (+ start 1))
+                                    #t
+                                  )
+                                )
+                              )
+                            ))
+                          )
+                          ; alle Möglichkeiten entfernen, die außerhalb des noch verfügbaren
+                          ; Rahmens liegen (ausgehend von Minimum und Maximum im Bereich)
+                          (grid 'set2
+                            (car c) ; Position als pair
+                            index ; Offset, der zur Position addiert werden muss
+                            (filter (lambda (x) (possible? x (- 1 len'))) e)
+                          )
+                        )
+                      )
+                    ) values (iota len')))
+                (stranded (cdr c))
+              )
+          )))          
+
           ; Hash ist der Wert, der ursprünglich (vor der versuchten Lösung) erstellt wurde.
           ; Kommt hier ein anderer Wert raus, wurde durch den Lösungsschritt (called) eine
           ; Änderung vorgenommen.
           (to-string (lambda ()
             (grid 'serialize 0 0)))
-;            (let((s ""))
-;              (each (lambda (x y value)
-;                (set! s (string-append s ","
-;                  (if (list? value)
-;                    (string-append "(" (list->string' value) ")")
-;                    (number->string value))))))
-;              s)))
-
           (diff (lambda (hash called extra)
-            (print "Änderung durch " extra "? " (not (equal? (to-string) hash))); "; " (to-string))
+            (if (not (equal? (to-string) hash)) (print "Änderung durch " extra))
             (not (equal? (to-string) hash))
           ))
 
+          ; Backtracking, besteht aus den nachfolgenden beiden Funktionen.
+          ; Hier: Einzelnen Wert einsetzen und versuchen, ob eine Lösung möglich ist.
+          (do-backtrack (lambda (state x y e)
+            (print "Backtrack [" x "," y "] -> " e)
+            (if (null? e) 'failed-backtrack
+              (begin
+                (grid 'deserialize state #f) ; Ausgangszustand wiederherstellen.
+                (grid 'set x y (car e)) ; Wert experimentell setzen.
+                (print-all)
+                (solve) ; Lösen... vielleicht?
+                (if (and (solvable?) (solved?))
+                  (print "Lösung scheint OK.")
+                  (do-backtrack state x y (cdr e)))))))
+          ; Freies Feld suchen, d.h. Feld mit ohne Werten.
+          (backtrack (lambda ()
+            (fold (lambda (x y e w)
+              (if w #t
+                (if (list? e)
+                  (let ((state (grid 'serialize #f #f)))
+                    (do-backtrack state x y e)
+                    #t)
+                  #f)))
+              #f)))
+
           ; alle Lösungsmöglichkeiten probieren
           (solve (lambda ()
-            (let((hash (to-string)))
-              (print "Neuer Versuch..."); hash)
-              (if
+            (if (solvable?)
+              (let((hash (to-string)))
+                (if
+                  (or ; alle der drei "normalen" Lösungsmöglichkeiten probieren.
+                    ; insbesondere gibt (diff) true zurück, wenn sich mindestens ein
+                    ; Feld (wenn auch nur eine Möglichkeit) geändert hat.
+                    (diff hash (fill-singles) "einsetzen")
+                    (diff hash (compartment-check compartments) "compartment")
+                    (diff hash (stranded compartments) "stranded")
+                  )
+                  (begin
+                    (if verbose (print-all))
+                    (solve)
+                  )
+                  (backtrack)))
+              #f)
+          ))
+
+          ; Gibt true zurück, falls das Grid gelöst ist.
+          ; Gelöst ist es, falls es kein Feld mehr gibt, welches keinen Wert enthält.
+          ; (d.h. enthält Liste von Möglichkeiten)
+          (solved? (lambda ()
+            (fold (lambda (x y value prev)
+              (and prev (not (list? value)))) #t)))
+
+          ; (schlechte) Abschätzung, ob das Str8ts noch gelöst werden kann:
+          ; dies ist nur dann der Fall, wenn in jedem Feld mindestens eine Möglichkeit existiert
+          ; oder dort bereits eine Zahl eingetragen wurde.
+
+          ; Leere Felder komplett ohne Möglichkeiten sind nicht lösbar, weil ja nichts
+          ; eingetragen werden kann.
+          (solvable? (lambda ()
+            (fold (lambda (x y value prev)
+              (and prev
                 (or
-                  (diff hash (fill-singles) "fill-singles")
-                  (diff hash (compartment-check compartments) "compartment-check")
-                  ; als letztes: allgemeine Lösungsstrategie mit Backtracking
-                  #f
-                )
-                (begin
-                  (print-all)
-                  (solve)
-                )
-                #f))))
+                  (not (list? value))
+                  (> (length value) 0))
+              )) #t)))
+
 
           ; Ausgabe
           (print-all (lambda ()
@@ -275,27 +371,7 @@
             ; Gibt das Grid auf der Konsole aus.
             ((print) (print-all))
 
-            ; Gibt true zurück, falls das Grid gelöst ist.
-            ; Gelöst ist es, falls es kein Feld mehr gibt, welches keinen Wert enthält.
-            ; (d.h. enthält Liste von Möglichkeiten)
-            ((solved?)
-              (fold (lambda (x y value prev)
-                (and prev (not (list? value)))) #t))
-
-
-            ; (schlechte) Abschätzung, ob das Str8ts noch gelöst werden kann:
-            ; dies ist nur dann der Fall, wenn in jedem Feld mindestens eine Möglichkeit existiert
-            ; oder dort bereits eine Zahl eingetragen wurde.
-
-            ; Leere Felder komplett ohne Möglichkeiten sind nicht lösbar, weil ja nichts
-            ; eingetragen werden kann.
-            ((solvable?)
-              (fold (lambda (x y value prev)
-                (and prev
-                  (or
-                    (not (list? value))
-                    (> (length value) 0))
-                )) #t))
+            ((solved?) (solved?))
 
             ; Lösung versuchen.
             ((solve) (solve))
@@ -311,9 +387,10 @@
     (let ((s (make-str8ts (sqrt' (length values)))))
       (apply s 'set-all values)
       (s 'find-compartments)
-      (print "Lösbar: " (s 'solvable?))
-      (print "Gelöst? " (s 'solved?))
+      (s 'print)
+
       (s 'solve)
+
       (s 'print)
       (print (if (s 'solved?) "Gelöst" "Nicht lösbar"))
 )))
@@ -340,7 +417,7 @@
 |#
 
 #|
-(str8ts ; Daily Str8ts, #1890
+(str8ts ; "My First Str8ts"
   -4  ?  ? -7 -0  ?  ?  ? -9
    ?  ?  7 -0  ?  ? -6  ?  ?
    ?  ? -8 -0  2  ? -0  3  ?
@@ -353,6 +430,7 @@
 )
 |#
 
+#|
 ; Solver-Beispiele; Easy 1 Str8ts
 (str8ts
   -6  ?  3 -0 -0  ?  ? -0 -0
@@ -366,6 +444,7 @@
   -0 -0  5  6 -0 -4  2  ? -0
 )
 ; Solver-Beispiele; Moderate 1 Str8ts
+; Stranded Digits sind hier von Bedeutung, da dadurch ohne Backtracking eine Lösung gefunden wird.
 (str8ts
   -0  ?  ?  ?  7 -0 -0  ?  1
   -5  ?  ?  7  ? -0  ?  ?  ?
@@ -377,3 +456,59 @@
    ?  ?  ? -9  ?  ?  ?  3 -0
    ?  9 -7 -0  1  ?  ?  ? -0
 )
+
+; Solver-Beispiele; Tough 1 Str8ts
+(str8ts
+  -0 -0  ?  6 -0  ?  ? -0 -3
+  -0  ?  ?  2 -0  ?  ?  ? -0
+   2  ? -0  ?  3  ? -0  ?  ?
+   ?  ?  ?  5  ?  ?  ?  7  ?
+  -0 -0  ?  ?  ?  1  ? -6 -0
+   ?  7  ?  ?  ?  ?  ?  ?  ?
+   ?  6 -0  ?  ?  ? -9  ?  ?
+  -5  ?  ?  ? -1  ?  ?  ? -0
+  -0 -0  ?  ? -7  ?  ? -0 -0
+)
+
+; Solver-Beispiele; Diabolical 1 Str8ts
+(str8ts
+  -4  9  ?  ? -3 -6  ?  ? -5
+   ?  ?  ?  ? -0  ?  ?  ?  ?
+   ?  ? -0 -2  ?  ? -0  ?  ?
+   ?  ?  ?  ?  ?  ?  ?  ?  ?
+  -0 -0  3  ?  ?  4  ? -1 -0
+   ?  ?  ?  ?  ?  ?  ?  ?  6
+   ?  ? -0  ?  ? -0 -0  ?  8
+   1  ?  ?  ? -9  ?  ?  ?  ?
+  -0  ?  ? -0 -0  ?  ?  ? -0
+)
+|#
+
+; Daily Str8ts 1890
+(str8ts
+   8  ? -0 -0  ?  ?  ? -0 -0
+   7  ? -0  ?  ? -0  ?  ? -6
+  -0  ?  ?  ? -0 -9  ?  ?  1
+   ?  ?  ?  ?  6  ? -0  ?  ?
+   ?  ? -1  ?  ?  ? -0  ?  ?
+   ?  ? -0  ?  ?  8  ?  4  ?
+   3  ?  ? -0 -0  7  ?  ? -0
+  -0  ?  ? -2  ?  ? -0  ?  ?
+  -0 -0  ?  ?  ? -0 -4  ?  ?
+)
+
+; The Weekly Extreme Str8ts Puzzle
+; #187, January 19 - January 25
+#|
+(str8ts
+   ?  7  6  ?  ? -0  ?  ?  3
+   ?  ?  ?  ?  ?  ? -0  ?  ?
+   ?  ?  ?  ? -9  ?  ?  4  ?
+   ?  ?  ?  ?  ?  ?  ? -0 -0
+   ?  ? -0  8  ?  ?  ?  ?  7
+   ?  ? -1  ?  ? -0  ?  ?  ?
+   5  ?  ?  ? -0  ?  ? -0  ?
+   2  ?  ?  ?  ?  ?  ?  ?  ?
+  -0 -0 -3  ?  ?  ?  ?  7  ?
+)
+|#
