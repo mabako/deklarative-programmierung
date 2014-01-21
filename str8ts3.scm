@@ -1,4 +1,4 @@
-(print "-------------------------------------------------")
+; nur mit Bigloo 4.0 getestet, vector-map gibt es z.B. nicht in älteren Versionen.
 (module str8ts3)
 
 ; ausführliche Ausgabe für 'print?
@@ -19,32 +19,24 @@
         wurzel
         (error 'sqrt' "Wurzel ist keine ganze Zahl" zahl)))))
 
-; Konvertiert eine Liste aus Zahlen zu einem String
-(define list->string' (lambda (c)
-  (if (null? c)
-    ""
-    (let((text (number->string (car c))) (rest (list->string' (cdr c))))
-      (if (equal? "" rest)
-        text
-        (string-append text "+" rest)
-    )))))
-
 ; n*n-Grid
-; TODO eventuell mit bei make-str8ts einschließen?
 (define make-grid
    (lambda (n)
     (let (
       (the-grid
+        ; leeres Grid mit neuen Vektoren anlegen
         (vector-map
           (lambda (e)
             (vector-map (lambda (_) (iota n 1)) (make-vector n)))
           (make-vector n)))
       (size n))
       (letrec(
-
+        ; Gibt einen einzelnen Wert zurück.
         (get (lambda (x y)
           (vector-ref (vector-ref the-grid x) y)))
 
+        ; Auswahl eines Intervalls, entweder als Teil einer Spalte oder als
+        ; Teil einer Reihe.
         ; Veränderungen am Rückgabewert müssen über set erfolgen.
         (select (lambda (x y)
           (if (pair? x)
@@ -55,12 +47,21 @@
             (take (drop (vector->list (vector-ref the-grid x)) (car y)) (- (cdr y) (car y)))
           )
         ))
+
+        ; Gibt eine gesamte Spalte oder Reihe zurück, abhängig
+        ; vom Parameter x/y. Für Spalten ist dies beispielsweise
+        ; (get-column x #f).
         (get-column (lambda (x y)
           (cond ((number? y) (select (cons 0 size) y))
                 ((number? x) (select x (cons 0 size))))))
 
+        ; Setzt einen Wert ohne Rücksicht auf eventuelle Einschränkung
+        ; vorhandener Möglichkeiten in allen anderen Werten.
         (raw-set (lambda (x y value)
           (vector-set! (vector-ref the-grid x) y value)))
+
+        ; Setzt alle Werte in einer Zeile und Spalte.
+        ; Entweder x oder y sollte #f sein, analog wie zu (select)
         (set-column (lambda (x y values)
           (let((index 0))
             (map
@@ -73,6 +74,8 @@
           )
         ))
 
+        ; Setzt einen Wert und entfernt diesen als Möglichkeit zu allen
+        ; anderen Werten in dieser Zeile/Spalte.
         (set (lambda (x y value)
           ; falls Zahl: gültiger Wert? [-n .. 0 .. n] sind gültig, da <= 0 schwarze Felder sind.
           (if (and (number? value) (> (abs value) n))
@@ -86,19 +89,27 @@
               (set-column #f y (map (lambda (e) (if (list? e) (remq (abs value) e) e)) (get-column #f y)))
             ))))
 
+        ; relatives Setzen eines Wertes - pos enthält ein pair aus (x y)
+        ; und addiert - relativ gesehen - den Wert von index dazu.
+        ; Damit entfällt das Ausrechnen der Position für Compartments (welche in einer
+        ; Liste unabhängig von der Ausrichtung gespeichert sind).
         (set2 (lambda (pos index value)
           (if (pair? (car pos))
             (set (+ (caar pos) index) (cdr pos) value)
             (set (car pos) (+ (cadr pos) index) value)
         ))))
+
         (lambda (message x y . params)
           (cond
             ; Bounds-Prüfung nur begrenzt für booleans sinnvoll.
             ((eqv? message 'get-column) (get-column x y))
             ((eqv? message 'select) (select x y))
             ((eqv? message 'set2) (set2 x y (car params)))
+
+            ; Speichern und Wiederherstellen des Zustands.
             ((eqv? message 'serialize) (obj->string the-grid))
             ((eqv? message 'deserialize) (set! the-grid (string->obj x)))
+
             ((or (< x 0) (>= x size))
               (error "make-grid" "x out of bounds" x))
             ((or (< y 0) (>= y size))
@@ -118,7 +129,7 @@
     (let this ((L liste) (index 0) (start #f) (compartments '()))
       (let((new-list (if (boolean? start) compartments (cons (cons start index) compartments))))
         (cond
-          ; ende der Liste
+          ; Ende der Liste
           ((null? L) new-list)
 
           ; Ende des Compartments
@@ -159,17 +170,21 @@
             (unspecified)
           ))
 
-          ; Einzelne Werte einsetzen
+          ; Einzelne Werte einsetzen - einfach in jedem Feld prüfen,
+          ; ob dort nur ein Element enthalten ist, und den ggf. setzen
           (fill-singles (lambda ()
             (each (lambda (x y e)
               (if (and (list? e) (= 1 (length e)))
                 (begin
-                  (if #f (print "setze x=" x ", y=" y " auf " e))
+                  (if verbose (print "setze x=" x ", y=" y " auf " (car e)))
                   (grid 'set x y (car e))
-                  (if #f (print-all))
+                  ; (print-all)
                 ))))))
 
-          ; Werte, die nicht möglich sind, entfernen
+          ; Werte, die nicht möglich sind, entfernen.
+          ; Dies ist der Fall, wenn in einem Compartment bereits mindestens ein Wert
+          ; steht und dadurch garantiert wird, dass bestimmte Werte nicht mehr eingesetzt werden
+          ; können.
           (compartment-check (lambda (c)
             (if (null? c) #f
               (letrec*(
@@ -177,8 +192,8 @@
                   (len' (length values))
                   (numvalues (filter number? values))
                 )
-                (if (not (null? numvalues))
-                  (map
+                (if (not (null? numvalues)) ; Sind im Compartment Werte enthalten?
+                  (map ; alle Elemente im Compartment durchgehen
                     (lambda (e index)
                       (if (list? e)
                         (begin
@@ -416,7 +431,7 @@
 
 ; Initialisiert ein str8ts, belegt die Werte vor und ruft danach 'lösen auf
 (define str8ts
-  (lambda values
+  (lambda (values)
     (let ((s (make-str8ts (sqrt' (length values)))))
       (apply s 'set-all values)
       (s 'find-compartments)
@@ -429,28 +444,25 @@
 )))
 
 ; http://www.str8ts.com/str8ts_6x6_sample_pack.pdf
-#|
-(str8ts ; Easy No. 1
+(define easy '( ; Easy No. 1
   -5 -0  ?  ?  2 -0
    ?  6  ?  ?  ? -0
    ?  ? -0 -0  5  ?
    2  ? -0 -6  ?  ?
   -0  ?  ?  ?  ?  ?
   -0  ?  5  ? -1 -2
-)
+))
 
-(str8ts ; Moderate No. 1
+(define moderate '( ; Moderate No. 1
   -0  ?  ? -3 -0 -0
   -1  ?  ?  ?  ?  ?
    ?  ? -0  6  ?  ?
    ?  ?  3 -0  ?  ?
    ?  ?  ?  ?  4 -0
-  -5 -6 -0  ?  ? -0)
+  -5 -6 -0  ?  ? -0
+))
 
-|#
-
-#|
-(str8ts ; "My First Str8ts"
+(define first '( ; "My First Str8ts"
   -4  ?  ? -7 -0  ?  ?  ? -9
    ?  ?  7 -0  ?  ? -6  ?  ?
    ?  ? -8 -0  2  ? -0  3  ?
@@ -460,12 +472,10 @@
    3  ? -0  ?  ? -0 -0  ?  8
    2  ? -0  ?  ? -0  ?  ?  ?
   -0  ?  ?  ? -0 -5  9  ? -0
-)
-|#
+))
 
-#|
 ; Solver-Beispiele; Easy 1 Str8ts
-(str8ts
+(define easy2 '(
   -6  ?  3 -0 -0  ?  ? -0 -0
    4  1  ?  3 -0  ?  8  ?  6
    ?  ? -0  ?  ? -0  ?  ?  ?
@@ -475,10 +485,10 @@
    ?  ?  8 -0  4  ? -0  6  ?
    ?  ?  9  ? -1  2  ?  ?  ?
   -0 -0  5  6 -0 -4  2  ? -0
-)
+))
 ; Solver-Beispiele; Moderate 1 Str8ts
 ; Stranded Digits sind hier von Bedeutung, da dadurch ohne Backtracking eine Lösung gefunden wird.
-(str8ts
+(define moderate2 '(
   -0  ?  ?  ?  7 -0 -0  ?  1
   -5  ?  ?  7  ? -0  ?  ?  ?
    ?  3 -1  ?  ?  ?  ?  ? -0
@@ -488,10 +498,10 @@
   -0  7  ?  ?  ?  ? -0  ?  ?
    ?  ?  ? -9  ?  ?  ?  3 -0
    ?  9 -7 -0  1  ?  ?  ? -0
-)
+))
 
 ; Solver-Beispiele; Tough 1 Str8ts
-(str8ts
+(define tough '(
   -0 -0  ?  6 -0  ?  ? -0 -3
   -0  ?  ?  2 -0  ?  ?  ? -0
    2  ? -0  ?  3  ? -0  ?  ?
@@ -501,10 +511,10 @@
    ?  6 -0  ?  ?  ? -9  ?  ?
   -5  ?  ?  ? -1  ?  ?  ? -0
   -0 -0  ?  ? -7  ?  ? -0 -0
-)
+))
 
 ; Solver-Beispiele; Diabolical 1 Str8ts
-(str8ts
+(define diab '(
   -4  9  ?  ? -3 -6  ?  ? -5
    ?  ?  ?  ? -0  ?  ?  ?  ?
    ?  ? -0 -2  ?  ? -0  ?  ?
@@ -514,12 +524,10 @@
    ?  ? -0  ?  ? -0 -0  ?  8
    1  ?  ?  ? -9  ?  ?  ?  ?
   -0  ?  ? -0 -0  ?  ?  ? -0
-)
-|#
+))
 
-#|
 ; Daily Str8ts 1890
-(str8ts
+(define daily '(
    8  ? -0 -0  ?  ?  ? -0 -0
    7  ? -0  ?  ? -0  ?  ? -6
   -0  ?  ?  ? -0 -9  ?  ?  1
@@ -529,12 +537,11 @@
    3  ?  ? -0 -0  7  ?  ? -0
   -0  ?  ? -2  ?  ? -0  ?  ?
   -0 -0  ?  ?  ? -0 -4  ?  ?
-)
-|#
+))
 
 ; The Weekly Extreme Str8ts Puzzle
 ; #187, January 19 - January 25
-(str8ts
+(define weekly '(
    ?  7  6  ?  ? -0  ?  ?  3
    ?  ?  ?  ?  ?  ? -0  ?  ?
    ?  ?  ?  ? -9  ?  ?  4  ?
@@ -544,4 +551,6 @@
    5  ?  ?  ? -0  ?  ? -0  ?
    2  ?  ?  ?  ?  ?  ?  ?  ?
   -0 -0 -3  ?  ?  ?  ?  7  ?
-)
+))
+
+(repl)
