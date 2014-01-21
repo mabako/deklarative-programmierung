@@ -4,6 +4,9 @@
 ; ausführliche Ausgabe für 'print?
 (define verbose #f)
 
+; Nur Backtracking verwenden?
+(define backtrack-only #f)
+
 ; allgemeiner unbekannter Wert
 (define ? '?)
 
@@ -337,13 +340,14 @@
             (if (solvable?)
               (let((hash (to-string)))
                 (if
-                  (or ; alle der drei "normalen" Lösungsmöglichkeiten probieren.
+                  (and (not backtrack-only)
+                    (or ; alle der drei "normalen" Lösungsmöglichkeiten probieren.
                     ; insbesondere gibt (diff) true zurück, wenn sich mindestens ein
                     ; Feld (wenn auch nur eine Möglichkeit) geändert hat.
                     (diff hash (fill-singles) "einsetzen")
                     (diff hash (compartment-check compartments) "compartment")
                     (diff hash (stranded compartments) "stranded")
-                  )
+                  ))
                   (begin
                     (if verbose (print-all))
                     (solve)
